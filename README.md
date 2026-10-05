@@ -1,59 +1,367 @@
-# Overview
-This repository contains a React frontend, and an Express backend that the frontend connects to.
+# DevOps Tech Challenge – Node.js Deployment on AWS ECS
 
-# Objective
-Deploy the frontend and backend to somewhere publicly accessible over the internet. The AWS Free Tier should be more than sufficient to run this project, but you may use any platform and tooling you'd like for your solution.
+## Overview
 
-Fork this repo as a base. You may change any code in this repository to suit the infrastructure you build in this code challenge.
+This project demonstrates a complete CI/CD deployment of a React frontend and Express.js backend to AWS ECS Fargate.
 
-# Submission
-1. A github repo that has been forked from this repo with all your code.
-2. Modify this README file with instructions for:
-* Any tools needed to deploy your infrastructure
-* All the steps needed to repeat your deployment process
-* URLs to the your deployed frontend.
+The application is containerized with Docker, infrastructure is provisioned using Terraform, and deployments are automated using Jenkins.
 
-# Evaluation
-You will be evaluated on the ease to replicate your infrastructure. This is a combination of quality of the instructions, as well as any scripts to automate the overall setup process.
+An alternative GitOps deployment using GitHub Actions is also implemented on the `gitops` branch.
 
-# Setup your environment
-Install nodejs. Binaries and installers can be found on nodejs.org.
-https://nodejs.org/en/download/
+## Architecture
 
-For macOS or Linux, Nodejs can usually be found in your preferred package manager.
-https://nodejs.org/en/download/package-manager/
-
-Depending on the Linux distribution, the Node Package Manager `npm` may need to be installed separately.
-
-# Running the project
-The backend and the frontend will need to run on separate processes. The backend should be started first.
+```text
+                         Internet
+                            |
+                            v
+                Application Load Balancer
+                     /              \
+                    /                \
+                   /api/*             /*
+                    |                  |
+                    v                  v
+             Backend ECS          Frontend ECS
+             Fargate Task         Fargate Task
+             Port 8080            Port 80
+                    \                /
+                     \              /
+                      Amazon ECR
+                          ^
+                          |
+                       Jenkins
+                          ^
+                          |
+                        GitHub
 ```
+
+The Application Load Balancer routes:
+
+- `/` and frontend traffic to the React frontend service.
+- `/api/*` to the Express backend service.
+
+Both applications run as Docker containers using AWS ECS Fargate.
+
+## Technologies
+
+- AWS ECS Fargate
+- Amazon ECR
+- Application Load Balancer
+- AWS IAM
+- Terraform
+- Docker
+- Jenkins
+- GitHub Actions
+- React
+- Node.js / Express
+- Git
+
+## Repository Structure
+
+```text
+.
+├── backend/
+│   ├── Dockerfile
+│   ├── config.js
+│   ├── index.js
+│   └── package.json
+│
+├── frontend/
+│   ├── Dockerfile
+│   ├── src/
+│   └── package.json
+│
+├── terraform/
+│   ├── alb.tf
+│   ├── autoscaling.tf
+│   ├── ecr.tf
+│   ├── ecs.tf
+│   ├── iam.tf
+│   ├── network.tf
+│   ├── provider.tf
+│   └── security-groups.tf
+│
+├── Jenkinsfile
+└── README.md
+```
+
+## Local Application
+
+The application was tested with Node.js 16.
+
+### Backend
+
+```bash
 cd backend
 npm ci
 npm start
 ```
-The backend should response to a GET request on `localhost:8080`.
 
-With the backend started, the frontend can be started.
+The backend runs on:
+
+```text
+http://localhost:8080
 ```
+
+### Frontend
+
+Open another terminal:
+
+```bash
 cd frontend
 npm ci
 npm start
 ```
-The frontend can be accessed at `localhost:3000`. If the frontend successfully connects to the backend, a message saying "SUCCESS" followed by a guid should be displayed on the screen.  If the connection failed, an error message will be displayed on the screen.
 
-# Configuration
-The frontend has a configuration file at `frontend/src/config.js` that defines the URL to call the backend. This URL is used on `frontend/src/App.js#12`, where the front end will make the GET call during the initial load of the page.
+The frontend development server runs on:
 
-The backend has a configuration file at `backend/config.js` that defines the host that the frontend will be calling from. This URL is used in the `Access-Control-Allow-Origin` CORS header, read in `backend/index.js#14`
+```text
+http://localhost:3000
+```
 
-# Optional Extras
-The core requirement for this challenge is to get the provided application up and running for consumption over the public internet. That being said, there are some opportunities in this code challenge to demonstrate your skill sets that are above and beyond the core requirement.
+## Docker
 
-A few examples of extras for this coding challenge:
-1. Dockerizing the application
-2. Scripts to set up the infrastructure
-3. Providing a pipeline for the application deployment
-4. Running the application in a serverless environment
+### Build Backend
 
-This is not an exhaustive list of extra features that could be added to this code challenge. At the end of the day, this section is for you to demonstrate any skills you want to show that’s not captured in the core requirement.
+```bash
+docker build -t challenge-backend ./backend
+```
+
+### Build Frontend
+
+```bash
+docker build -t challenge-frontend ./frontend
+```
+
+The production frontend is built using Node.js and served by Nginx.
+
+## Infrastructure Deployment
+
+All application infrastructure is provisioned using Terraform.
+
+Terraform creates:
+
+- VPC
+- Two public subnets in separate Availability Zones
+- Internet Gateway
+- Route table
+- Security groups
+- Application Load Balancer
+- Frontend and backend target groups
+- Amazon ECR repositories
+- ECS cluster
+- ECS task definitions
+- ECS services
+- IAM ECS task execution role
+- ECS Service Auto Scaling
+
+Initialize Terraform:
+
+```bash
+cd terraform
+terraform init
+```
+
+Format and validate:
+
+```bash
+terraform fmt
+terraform validate
+```
+
+Review the infrastructure:
+
+```bash
+terraform plan
+```
+
+Deploy:
+
+```bash
+terraform apply
+```
+
+## ECS Configuration
+
+Both ECS services use AWS Fargate.
+
+Each task is configured with:
+
+```text
+CPU:            512 units (0.5 vCPU)
+Memory:         1024 MB (1 GB)
+Minimum tasks:  1
+Desired tasks:  1
+Maximum tasks:  4
+```
+
+Target tracking auto scaling maintains approximately:
+
+```text
+50% average CPU utilization
+```
+
+for both the frontend and backend services.
+
+## Load Balancer Routing
+
+A single public Application Load Balancer exposes the application.
+
+```text
+ALB
+ |
+ +---- /api/* ----> Backend Target Group ----> ECS :8080
+ |
+ +---- /* --------> Frontend Target Group ---> ECS :80
+```
+
+The frontend uses `/api/` for backend requests. This allows the browser to communicate with both services through the same Application Load Balancer.
+
+## Jenkins CI/CD Pipeline
+
+Jenkins runs on a dedicated EC2 instance.
+
+The Jenkins server was configured manually because the challenge only requires the application infrastructure to be provisioned with Terraform.
+
+The EC2 instance uses an IAM instance role rather than static AWS credentials.
+
+The Jenkins pipeline performs:
+
+```text
+GitHub
+   |
+   v
+Checkout Source Code
+   |
+   v
+Build Docker Images
+   |
+   v
+Authenticate to Amazon ECR
+   |
+   v
+Push Images to ECR
+   |
+   v
+Force New ECS Deployment
+   |
+   v
+Wait for ECS Services
+   |
+   v
+Deployment Complete
+```
+
+The pipeline is defined in:
+
+```text
+Jenkinsfile
+```
+
+### Jenkins Pipeline Stages
+
+1. Checkout repository
+2. Build frontend and backend Docker images
+3. Authenticate to Amazon ECR
+4. Push both images to ECR
+5. Trigger new ECS deployments
+6. Wait until both ECS services become stable
+
+AWS permissions are provided to Jenkins using an EC2 IAM role.
+
+No AWS access keys are stored in the repository.
+
+## GitOps Alternative – GitHub Actions
+
+An alternative CI/CD implementation is available on the:
+
+```text
+gitops
+```
+
+branch.
+
+The workflow is located at:
+
+```text
+.github/workflows/deploy.yml
+```
+
+A push to the `gitops` branch triggers:
+
+```text
+Git Push
+   |
+   v
+GitHub Actions
+   |
+   v
+Build Docker Images
+   |
+   v
+Push Images to Amazon ECR
+   |
+   v
+Update ECS Services
+   |
+   v
+Wait for ECS Services
+   |
+   v
+Deployment Complete
+```
+
+AWS credentials used by GitHub Actions are stored using GitHub Actions Secrets and are never committed to source control.
+
+## Security
+
+Several security practices are used in this project:
+
+- AWS credentials are not committed to Git.
+- Jenkins uses an EC2 IAM role for AWS access.
+- GitHub Actions credentials are stored as encrypted repository secrets.
+- ECS tasks accept application traffic only from the Application Load Balancer security group.
+- ECR repositories are private.
+- SSH/private key files and Terraform state are excluded using `.gitignore`.
+- The source repository used for evaluation is private.
+
+## Application URL
+
+Frontend:
+
+```text
+http://devops-challenge-alb-1316839665.us-east-1.elb.amazonaws.com
+```
+
+A successful deployment displays:
+
+```text
+SUCCESS <backend-generated-guid>
+```
+
+This confirms that the React frontend can successfully communicate with the backend running as a separate ECS service.
+
+## CI/CD Implementations
+
+Two deployment approaches are included:
+
+| Branch | CI/CD System | Deployment |
+|---|---|---|
+| `main` | Jenkins | Docker → ECR → ECS |
+| `gitops` | GitHub Actions | Docker → ECR → ECS |
+
+## Cleanup
+
+To avoid unnecessary AWS charges, resources can be removed after evaluation.
+
+First terminate manually created Jenkins resources, then remove Terraform-managed infrastructure:
+
+```bash
+cd terraform
+terraform destroy
+```
+
+ECR repositories may need to be emptied before Terraform can delete them.
+
+## Author
+
+Daniel BM
