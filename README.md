@@ -1,4 +1,4 @@
-# DevOps Tech Challenge – Node.js Deployment on AWS ECS
+# React Frontend and express Backend Deployment on AWS ECS
 
 ## Overview
 
